@@ -13,8 +13,17 @@ from flask import (
 )
 from werkzeug.security import generate_password_hash, check_password_hash
 
+# ---------- DB config ----------
+DATABASE_URL = os.environ.get("DATABASE_URL")  # Render Postgres
+IS_PG = bool(DATABASE_URL)
+
+if IS_PG:
+    import psycopg
+    from psycopg.rows import dict_row
+    from psycopg.errors import UniqueViolation
+
 APP_TITLE = "MyTube"
-DB_PATH = os.environ.get("MYTUBE_DB", "mytube.db")
+DB_PATH = os.environ.get("MYTUBE_DB", "mytube.db")  # SQLite fallback lokalt
 
 # Main admin (låst)
 ADMIN_USERNAME = os.environ.get("MYTUBE_ADMIN_USER", "admin")
@@ -22,6 +31,33 @@ ADMIN_PASSWORD = os.environ.get("MYTUBE_ADMIN_PASS", "admin")
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret-change-me")
+
+
+# ---------- Small SQL helpers ----------
+def q(sqlite_sql: str, pg_sql: str) -> str:
+    """Pick SQL depending on engine."""
+    return pg_sql if IS_PG else sqlite_sql
+
+
+def dt(col: str) -> str:
+    """Datetime cast for ordering (created_at stored as ISO string)."""
+    # SQLite: datetime(created_at)
+    # Postgres: created_at::timestamp (works for ISO8601 strings)
+    return f"{col}::timestamp" if IS_PG else f"datetime({col})"
+
+
+def like_op() -> str:
+    # SQLite LIKE is case-insensitive by default for ASCII; Postgres LIKE is case-sensitive.
+    # To behave more similar: use ILIKE on Postgres.
+    return "ILIKE" if IS_PG else "LIKE"
+
+
+def is_unique_violation(exc: Exception) -> bool:
+    if IS_PG and isinstance(exc, UniqueViolation):
+        return True
+    if isinstance(exc, sqlite3.IntegrityError):
+        return True
+    return False
 
 
 # ---------- i18n ----------
@@ -297,9 +333,14 @@ def t(key: str, **kwargs) -> str:
 # ---------- DB ----------
 def get_db():
     if "db" not in g:
-        g.db = sqlite3.connect(DB_PATH)
-        g.db.row_factory = sqlite3.Row
-        g.db.execute("PRAGMA foreign_keys = ON;")
+        if IS_PG:
+            # Postgres
+            g.db = psycopg.connect(DATABASE_URL, row_factory=dict_row)
+        else:
+            # SQLite
+            g.db = sqlite3.connect(DB_PATH)
+            g.db.row_factory = sqlite3.Row
+            g.db.execute("PRAGMA foreign_keys = ON;")
     return g.db
 
 
@@ -310,7 +351,8 @@ def close_db(_exc):
         db.close()
 
 
-def _ensure_column(db, table: str, col: str, ddl: str):
+def _ensure_column_sqlite(db, table: str, col: str, ddl: str):
+    # SQLite-only migration helper
     cols = [r["name"] for r in db.execute(f"PRAGMA table_info({table})").fetchall()]
     if col not in cols:
         db.execute(ddl)
@@ -319,18 +361,22 @@ def _ensure_column(db, table: str, col: str, ddl: str):
 
 def init_db():
     db = get_db()
-    db.executescript(
-        """
+
+    if IS_PG:
+        # ---- Postgres schema ----
+        db.execute("""
         CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             username TEXT NOT NULL UNIQUE,
             password_hash TEXT NOT NULL,
             is_admin INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL
         );
+        """)
 
+        db.execute("""
         CREATE TABLE IF NOT EXISTS videos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             title TEXT NOT NULL,
             description TEXT DEFAULT '',
             source_url TEXT NOT NULL,
@@ -339,75 +385,168 @@ def init_db():
             provider TEXT DEFAULT 'custom',
             created_at TEXT NOT NULL,
             views INTEGER NOT NULL DEFAULT 0,
-            likes INTEGER NOT NULL DEFAULT 0
+            likes INTEGER NOT NULL DEFAULT 0,
+            embed_html TEXT DEFAULT '',
+            category TEXT DEFAULT ''
         );
+        """)
 
+        db.execute("""
         CREATE TABLE IF NOT EXISTS comments (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            video_id INTEGER NOT NULL,
-            user_id INTEGER,
+            id SERIAL PRIMARY KEY,
+            video_id INTEGER NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
+            user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
             author TEXT NOT NULL,
             body TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            FOREIGN KEY(video_id) REFERENCES videos(id) ON DELETE CASCADE,
-            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL
+            created_at TEXT NOT NULL
         );
+        """)
 
+        db.execute("""
         CREATE TABLE IF NOT EXISTS watch_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            video_id INTEGER NOT NULL,
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            video_id INTEGER NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
             last_watched_at TEXT NOT NULL,
             watch_count INTEGER NOT NULL DEFAULT 1,
-            UNIQUE(user_id, video_id),
-            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
-            FOREIGN KEY(video_id) REFERENCES videos(id) ON DELETE CASCADE
+            UNIQUE(user_id, video_id)
         );
+        """)
 
+        db.execute("""
         CREATE TABLE IF NOT EXISTS playlists (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             name TEXT NOT NULL,
             created_at TEXT NOT NULL
         );
+        """)
 
+        db.execute("""
         CREATE TABLE IF NOT EXISTS playlist_items (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            playlist_id INTEGER NOT NULL,
-            video_id INTEGER NOT NULL,
+            id SERIAL PRIMARY KEY,
+            playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+            video_id INTEGER NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
             position INTEGER NOT NULL DEFAULT 1,
-            UNIQUE(playlist_id, video_id),
-            FOREIGN KEY(playlist_id) REFERENCES playlists(id) ON DELETE CASCADE,
-            FOREIGN KEY(video_id) REFERENCES videos(id) ON DELETE CASCADE
+            UNIQUE(playlist_id, video_id)
         );
+        """)
 
+        db.execute("""
         CREATE TABLE IF NOT EXISTS video_likes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            video_id INTEGER NOT NULL,
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            video_id INTEGER NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
             created_at TEXT NOT NULL,
-            UNIQUE(user_id, video_id),
-            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
-            FOREIGN KEY(video_id) REFERENCES videos(id) ON DELETE CASCADE
+            UNIQUE(user_id, video_id)
         );
+        """)
 
-        CREATE INDEX IF NOT EXISTS idx_videos_created ON videos(created_at);
-        CREATE INDEX IF NOT EXISTS idx_comments_video ON comments(video_id);
-        CREATE INDEX IF NOT EXISTS idx_history_user_time ON watch_history(user_id, last_watched_at);
-        CREATE INDEX IF NOT EXISTS idx_playlist_pos ON playlist_items(playlist_id, position);
-        """
-    )
-    db.commit()
+        db.execute("CREATE INDEX IF NOT EXISTS idx_videos_created ON videos(created_at);")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_comments_video ON comments(video_id);")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_history_user_time ON watch_history(user_id, last_watched_at);")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_playlist_pos ON playlist_items(playlist_id, position);")
 
-    _ensure_column(db, "videos", "embed_html", "ALTER TABLE videos ADD COLUMN embed_html TEXT DEFAULT '';")
-    _ensure_column(db, "videos", "category", "ALTER TABLE videos ADD COLUMN category TEXT DEFAULT '';")
+        db.commit()
 
-    admin = db.execute("SELECT id FROM users WHERE username=?", (ADMIN_USERNAME,)).fetchone()
-    if not admin:
-        db.execute(
-            "INSERT INTO users (username, password_hash, is_admin, created_at) VALUES (?, ?, ?, ?)",
-            (ADMIN_USERNAME, generate_password_hash(ADMIN_PASSWORD), 1, datetime.utcnow().isoformat()),
+        admin = db.execute("SELECT id FROM users WHERE username=%s", (ADMIN_USERNAME,)).fetchone()
+        if not admin:
+            db.execute(
+                "INSERT INTO users (username, password_hash, is_admin, created_at) VALUES (%s, %s, %s, %s)",
+                (ADMIN_USERNAME, generate_password_hash(ADMIN_PASSWORD), 1, datetime.utcnow().isoformat()),
+            )
+            db.commit()
+
+    else:
+        # ---- SQLite schema (din original) ----
+        db.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                is_admin INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS videos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                description TEXT DEFAULT '',
+                source_url TEXT NOT NULL,
+                embed_url TEXT NOT NULL,
+                thumbnail_url TEXT DEFAULT '',
+                provider TEXT DEFAULT 'custom',
+                created_at TEXT NOT NULL,
+                views INTEGER NOT NULL DEFAULT 0,
+                likes INTEGER NOT NULL DEFAULT 0
+            );
+
+            CREATE TABLE IF NOT EXISTS comments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                video_id INTEGER NOT NULL,
+                user_id INTEGER,
+                author TEXT NOT NULL,
+                body TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(video_id) REFERENCES videos(id) ON DELETE CASCADE,
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS watch_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                video_id INTEGER NOT NULL,
+                last_watched_at TEXT NOT NULL,
+                watch_count INTEGER NOT NULL DEFAULT 1,
+                UNIQUE(user_id, video_id),
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY(video_id) REFERENCES videos(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS playlists (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS playlist_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                playlist_id INTEGER NOT NULL,
+                video_id INTEGER NOT NULL,
+                position INTEGER NOT NULL DEFAULT 1,
+                UNIQUE(playlist_id, video_id),
+                FOREIGN KEY(playlist_id) REFERENCES playlists(id) ON DELETE CASCADE,
+                FOREIGN KEY(video_id) REFERENCES videos(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS video_likes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                video_id INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE(user_id, video_id),
+                FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY(video_id) REFERENCES videos(id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_videos_created ON videos(created_at);
+            CREATE INDEX IF NOT EXISTS idx_comments_video ON comments(video_id);
+            CREATE INDEX IF NOT EXISTS idx_history_user_time ON watch_history(user_id, last_watched_at);
+            CREATE INDEX IF NOT EXISTS idx_playlist_pos ON playlist_items(playlist_id, position);
+            """
         )
         db.commit()
+
+        _ensure_column_sqlite(db, "videos", "embed_html", "ALTER TABLE videos ADD COLUMN embed_html TEXT DEFAULT '';")
+        _ensure_column_sqlite(db, "videos", "category", "ALTER TABLE videos ADD COLUMN category TEXT DEFAULT '';")
+
+        admin = db.execute("SELECT id FROM users WHERE username=?", (ADMIN_USERNAME,)).fetchone()
+        if not admin:
+            db.execute(
+                "INSERT INTO users (username, password_hash, is_admin, created_at) VALUES (?, ?, ?, ?)",
+                (ADMIN_USERNAME, generate_password_hash(ADMIN_PASSWORD), 1, datetime.utcnow().isoformat()),
+            )
+            db.commit()
 
 
 @app.before_request
@@ -421,7 +560,13 @@ def current_user():
     if not uid:
         return None
     db = get_db()
-    return db.execute("SELECT id, username, is_admin FROM users WHERE id=?", (uid,)).fetchone()
+    return db.execute(
+        q(
+            "SELECT id, username, is_admin FROM users WHERE id=?",
+            "SELECT id, username, is_admin FROM users WHERE id=%s",
+        ),
+        (uid,),
+    ).fetchone()
 
 
 def require_login():
@@ -559,13 +704,22 @@ def force_provider_embed(provider_choice: str, source_url: str):
 # ---------- Playlist helpers ----------
 def get_video_playlist(db, video_id: int):
     row = db.execute(
-        """
-        SELECT p.id as playlist_id, p.name as playlist_name
-        FROM playlist_items pi
-        JOIN playlists p ON p.id = pi.playlist_id
-        WHERE pi.video_id = ?
-        LIMIT 1
-        """,
+        q(
+            """
+            SELECT p.id as playlist_id, p.name as playlist_name
+            FROM playlist_items pi
+            JOIN playlists p ON p.id = pi.playlist_id
+            WHERE pi.video_id = ?
+            LIMIT 1
+            """,
+            """
+            SELECT p.id as playlist_id, p.name as playlist_name
+            FROM playlist_items pi
+            JOIN playlists p ON p.id = pi.playlist_id
+            WHERE pi.video_id = %s
+            LIMIT 1
+            """,
+        ),
         (video_id,),
     ).fetchone()
     return row
@@ -573,20 +727,32 @@ def get_video_playlist(db, video_id: int):
 
 def get_playlist_items(db, playlist_id: int):
     return db.execute(
-        """
-        SELECT v.*, pi.position
-        FROM playlist_items pi
-        JOIN videos v ON v.id = pi.video_id
-        WHERE pi.playlist_id = ?
-        ORDER BY pi.position ASC, datetime(v.created_at) DESC
-        """,
+        q(
+            f"""
+            SELECT v.*, pi.position
+            FROM playlist_items pi
+            JOIN videos v ON v.id = pi.video_id
+            WHERE pi.playlist_id = ?
+            ORDER BY pi.position ASC, {dt("v.created_at")} DESC
+            """,
+            f"""
+            SELECT v.*, pi.position
+            FROM playlist_items pi
+            JOIN videos v ON v.id = pi.video_id
+            WHERE pi.playlist_id = %s
+            ORDER BY pi.position ASC, {dt("v.created_at")} DESC
+            """,
+        ),
         (playlist_id,),
     ).fetchall()
 
 
 def get_next_in_playlist_id(db, playlist_id: int, current_video_id: int):
     cur = db.execute(
-        "SELECT position FROM playlist_items WHERE playlist_id=? AND video_id=?",
+        q(
+            "SELECT position FROM playlist_items WHERE playlist_id=? AND video_id=?",
+            "SELECT position FROM playlist_items WHERE playlist_id=%s AND video_id=%s",
+        ),
         (playlist_id, current_video_id),
     ).fetchone()
     if not cur:
@@ -594,12 +760,20 @@ def get_next_in_playlist_id(db, playlist_id: int, current_video_id: int):
     current_pos = int(cur["position"])
 
     nxt = db.execute(
-        """
-        SELECT video_id FROM playlist_items
-        WHERE playlist_id=? AND position > ?
-        ORDER BY position ASC
-        LIMIT 1
-        """,
+        q(
+            """
+            SELECT video_id FROM playlist_items
+            WHERE playlist_id=? AND position > ?
+            ORDER BY position ASC
+            LIMIT 1
+            """,
+            """
+            SELECT video_id FROM playlist_items
+            WHERE playlist_id=%s AND position > %s
+            ORDER BY position ASC
+            LIMIT 1
+            """,
+        ),
         (playlist_id, current_pos),
     ).fetchone()
     return int(nxt["video_id"]) if nxt else None
@@ -610,15 +784,14 @@ def get_next_in_playlist_id(db, playlist_id: int, current_video_id: int):
 def index():
     db = get_db()
 
-    q = (request.args.get("q") or "").strip()
+    qtext = (request.args.get("q") or "").strip()
     category = (request.args.get("cat") or "").strip()
     sort = (request.args.get("sort") or "new").strip().lower()
     if sort not in ("new", "views", "likes"):
         sort = "new"
 
-    # categories list (auto from videos.category)
     categories = db.execute(
-        """
+        f"""
         SELECT DISTINCT TRIM(category) AS c
         FROM videos
         WHERE TRIM(category) != ''
@@ -630,32 +803,34 @@ def index():
     where = []
     params = []
 
-    if q:
-        where.append("(title LIKE ? OR description LIKE ? OR category LIKE ?)")
-        params += [f"%{q}%", f"%{q}%", f"%{q}%"]
+    if qtext:
+        op = like_op()
+        where.append(f"(title {op} %s OR description {op} %s OR category {op} %s)" if IS_PG
+                     else f"(title {op} ? OR description {op} ? OR category {op} ?)")
+        params += [f"%{qtext}%", f"%{qtext}%", f"%{qtext}%"]
 
     if category:
-        where.append("TRIM(category) = ?")
+        where.append("TRIM(category) = %s" if IS_PG else "TRIM(category) = ?")
         params.append(category)
 
     where_sql = ("WHERE " + " AND ".join(where)) if where else ""
 
     if sort == "views":
-        order_sql = "ORDER BY views DESC, datetime(created_at) DESC"
+        order_sql = f"ORDER BY views DESC, {dt('created_at')} DESC"
     elif sort == "likes":
-        order_sql = "ORDER BY likes DESC, datetime(created_at) DESC"
+        order_sql = f"ORDER BY likes DESC, {dt('created_at')} DESC"
     else:
-        order_sql = "ORDER BY datetime(created_at) DESC"
+        order_sql = f"ORDER BY {dt('created_at')} DESC"
 
     rows = db.execute(
-        f"SELECT * FROM videos {where_sql} {order_sql}"
-        , tuple(params)
+        f"SELECT * FROM videos {where_sql} {order_sql}",
+        tuple(params),
     ).fetchall()
 
     return render_template(
         "index.html",
         videos=rows,
-        q=q,
+        q=qtext,
         categories=categories,
         selected_cat=category,
         sort=sort,
@@ -665,41 +840,65 @@ def index():
 @app.route("/watch/<int:video_id>")
 def watch(video_id: int):
     db = get_db()
-    video = db.execute("SELECT * FROM videos WHERE id=?", (video_id,)).fetchone()
+    video = db.execute(
+        q("SELECT * FROM videos WHERE id=?", "SELECT * FROM videos WHERE id=%s"),
+        (video_id,),
+    ).fetchone()
     if not video:
         abort(404)
 
     noview = (request.args.get("noview") or "") == "1"
     if not noview:
-        db.execute("UPDATE videos SET views = views + 1 WHERE id=?", (video_id,))
+        db.execute(
+            q("UPDATE videos SET views = views + 1 WHERE id=?", "UPDATE videos SET views = views + 1 WHERE id=%s"),
+            (video_id,),
+        )
         db.commit()
 
     user = current_user()
     if user:
         now = datetime.utcnow().isoformat()
         db.execute(
-            """
-            INSERT INTO watch_history (user_id, video_id, last_watched_at, watch_count)
-            VALUES (?, ?, ?, 1)
-            ON CONFLICT(user_id, video_id)
-            DO UPDATE SET last_watched_at = excluded.last_watched_at,
-                         watch_count = watch_count + 1
-            """,
+            q(
+                """
+                INSERT INTO watch_history (user_id, video_id, last_watched_at, watch_count)
+                VALUES (?, ?, ?, 1)
+                ON CONFLICT(user_id, video_id)
+                DO UPDATE SET last_watched_at = excluded.last_watched_at,
+                             watch_count = watch_count + 1
+                """,
+                """
+                INSERT INTO watch_history (user_id, video_id, last_watched_at, watch_count)
+                VALUES (%s, %s, %s, 1)
+                ON CONFLICT(user_id, video_id)
+                DO UPDATE SET last_watched_at = EXCLUDED.last_watched_at,
+                             watch_count = watch_history.watch_count + 1
+                """,
+            ),
             (user["id"], video_id, now),
         )
         db.commit()
 
-    video = db.execute("SELECT * FROM videos WHERE id=?", (video_id,)).fetchone()
+    video = db.execute(
+        q("SELECT * FROM videos WHERE id=?", "SELECT * FROM videos WHERE id=%s"),
+        (video_id,),
+    ).fetchone()
 
     comments = db.execute(
-        "SELECT * FROM comments WHERE video_id=? ORDER BY datetime(created_at) DESC",
+        q(
+            f"SELECT * FROM comments WHERE video_id=? ORDER BY {dt('created_at')} DESC",
+            f"SELECT * FROM comments WHERE video_id=%s ORDER BY {dt('created_at')} DESC",
+        ),
         (video_id,),
     ).fetchall()
 
     liked = False
     if user:
         liked = db.execute(
-            "SELECT 1 FROM video_likes WHERE user_id=? AND video_id=?",
+            q(
+                "SELECT 1 FROM video_likes WHERE user_id=? AND video_id=?",
+                "SELECT 1 FROM video_likes WHERE user_id=%s AND video_id=%s",
+            ),
             (user["id"], video_id),
         ).fetchone() is not None
 
@@ -715,12 +914,20 @@ def watch(video_id: int):
     recommended = []
     if not playlist:
         recommended = db.execute(
-            """
-            SELECT * FROM videos
-            WHERE id != ?
-            ORDER BY (provider = ?) DESC, datetime(created_at) DESC
-            LIMIT 12
-            """,
+            q(
+                f"""
+                SELECT * FROM videos
+                WHERE id != ?
+                ORDER BY (provider = ?) DESC, {dt('created_at')} DESC
+                LIMIT 12
+                """,
+                f"""
+                SELECT * FROM videos
+                WHERE id != %s
+                ORDER BY (provider = %s) DESC, {dt('created_at')} DESC
+                LIMIT 12
+                """,
+            ),
             (video_id, video["provider"]),
         ).fetchall()
 
@@ -739,7 +946,10 @@ def watch(video_id: int):
 @app.route("/watch/<int:video_id>/like", methods=["POST"])
 def like(video_id: int):
     db = get_db()
-    v = db.execute("SELECT id FROM videos WHERE id=?", (video_id,)).fetchone()
+    v = db.execute(
+        q("SELECT id FROM videos WHERE id=?", "SELECT id FROM videos WHERE id=%s"),
+        (video_id,),
+    ).fetchone()
     if not v:
         abort(404)
 
@@ -757,16 +967,30 @@ def like(video_id: int):
 
     try:
         db.execute(
-            "INSERT INTO video_likes (user_id, video_id, created_at) VALUES (?, ?, ?)",
+            q(
+                "INSERT INTO video_likes (user_id, video_id, created_at) VALUES (?, ?, ?)",
+                "INSERT INTO video_likes (user_id, video_id, created_at) VALUES (%s, %s, %s)",
+            ),
             (user["id"], video_id, datetime.utcnow().isoformat()),
         )
-        db.execute("UPDATE videos SET likes = likes + 1 WHERE id=?", (video_id,))
+        db.execute(
+            q("UPDATE videos SET likes = likes + 1 WHERE id=?", "UPDATE videos SET likes = likes + 1 WHERE id=%s"),
+            (video_id,),
+        )
         db.commit()
         liked_now = True
-    except sqlite3.IntegrityError:
-        liked_now = True
+    except Exception as e:
+        if is_unique_violation(e):
+            liked_now = True
+        else:
+            db.rollback() if IS_PG else None
+            flash(t("like_failed"), "error")
+            return redirect(url_for("watch", video_id=video_id, noview=1))
 
-    likes_row = db.execute("SELECT likes FROM videos WHERE id=?", (video_id,)).fetchone()
+    likes_row = db.execute(
+        q("SELECT likes FROM videos WHERE id=?", "SELECT likes FROM videos WHERE id=%s"),
+        (video_id,),
+    ).fetchone()
     likes = int(likes_row["likes"]) if likes_row else 0
 
     wants_json = (
@@ -783,7 +1007,10 @@ def like(video_id: int):
 @app.route("/watch/<int:video_id>/comment", methods=["POST"])
 def comment(video_id: int):
     db = get_db()
-    v = db.execute("SELECT id FROM videos WHERE id=?", (video_id,)).fetchone()
+    v = db.execute(
+        q("SELECT id FROM videos WHERE id=?", "SELECT id FROM videos WHERE id=%s"),
+        (video_id,),
+    ).fetchone()
     if not v:
         abort(404)
 
@@ -801,10 +1028,16 @@ def comment(video_id: int):
         author = t("anon")
 
     db.execute(
-        """
-        INSERT INTO comments (video_id, user_id, author, body, created_at)
-        VALUES (?, ?, ?, ?, ?)
-        """,
+        q(
+            """
+            INSERT INTO comments (video_id, user_id, author, body, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            """
+            INSERT INTO comments (video_id, user_id, author, body, created_at)
+            VALUES (%s, %s, %s, %s, %s)
+            """,
+        ),
         (video_id, user["id"] if user else None, author[:50], body[:1000], datetime.utcnow().isoformat()),
     )
     db.commit()
@@ -820,13 +1053,22 @@ def history():
     user = current_user()
     db = get_db()
     rows = db.execute(
-        """
-        SELECT h.last_watched_at, h.watch_count, v.*
-        FROM watch_history h
-        JOIN videos v ON v.id = h.video_id
-        WHERE h.user_id = ?
-        ORDER BY datetime(h.last_watched_at) DESC
-        """,
+        q(
+            f"""
+            SELECT h.last_watched_at, h.watch_count, v.*
+            FROM watch_history h
+            JOIN videos v ON v.id = h.video_id
+            WHERE h.user_id = ?
+            ORDER BY {dt('h.last_watched_at')} DESC
+            """,
+            f"""
+            SELECT h.last_watched_at, h.watch_count, v.*
+            FROM watch_history h
+            JOIN videos v ON v.id = h.video_id
+            WHERE h.user_id = %s
+            ORDER BY {dt('h.last_watched_at')} DESC
+            """,
+        ),
         (user["id"],),
     ).fetchall()
 
@@ -844,7 +1086,10 @@ def login():
 
         db = get_db()
         user = db.execute(
-            "SELECT id, username, password_hash, is_admin FROM users WHERE username=?",
+            q(
+                "SELECT id, username, password_hash, is_admin FROM users WHERE username=?",
+                "SELECT id, username, password_hash, is_admin FROM users WHERE username=%s",
+            ),
             (username,),
         ).fetchone()
 
@@ -870,8 +1115,7 @@ def logout():
 def register():
     if request.method == "POST":
         username = (request.form.get("username") or "").strip()
-        password = (request.form.get("password") or ""
-)
+        password = (request.form.get("password") or "")
         password2 = (request.form.get("password2") or "")
 
         if not username or not password:
@@ -889,13 +1133,18 @@ def register():
         db = get_db()
         try:
             db.execute(
-                "INSERT INTO users (username, password_hash, is_admin, created_at) VALUES (?, ?, 0, ?)",
+                q(
+                    "INSERT INTO users (username, password_hash, is_admin, created_at) VALUES (?, ?, 0, ?)",
+                    "INSERT INTO users (username, password_hash, is_admin, created_at) VALUES (%s, %s, 0, %s)",
+                ),
                 (username, generate_password_hash(password), datetime.utcnow().isoformat()),
             )
             db.commit()
-        except sqlite3.IntegrityError:
-            flash(t("username_exists"), "error")
-            return render_template("register.html")
+        except Exception as e:
+            if is_unique_violation(e):
+                flash(t("username_exists"), "error")
+                return render_template("register.html")
+            raise
 
         flash(t("account_created"), "ok")
         return redirect(url_for("login"))
@@ -903,12 +1152,14 @@ def register():
     return render_template("register.html")
 
 
-# ---------- Admin (behåll dina admin templates som du redan fick) ----------
+# ---------- Admin ----------
 @app.route("/admin")
 def admin():
     require_admin()
     db = get_db()
-    videos = db.execute("SELECT * FROM videos ORDER BY datetime(created_at) DESC").fetchall()
+    videos = db.execute(
+        f"SELECT * FROM videos ORDER BY {dt('created_at')} DESC"
+    ).fetchall()
     return render_template("admin.html", videos=videos)
 
 
@@ -932,12 +1183,20 @@ def admin_add():
         provider, embed_url, embed_html = force_provider_embed(provider_choice, source_url)
 
         db.execute(
-            """
-            INSERT INTO videos
-              (title, description, source_url, embed_url, thumbnail_url, provider, created_at, embed_html, category)
-            VALUES
-              (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
+            q(
+                """
+                INSERT INTO videos
+                  (title, description, source_url, embed_url, thumbnail_url, provider, created_at, embed_html, category)
+                VALUES
+                  (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                """
+                INSERT INTO videos
+                  (title, description, source_url, embed_url, thumbnail_url, provider, created_at, embed_html, category)
+                VALUES
+                  (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+            ),
             (title, description, source_url, embed_url, thumbnail_url, provider,
              datetime.utcnow().isoformat(), embed_html, category),
         )
@@ -952,11 +1211,14 @@ def admin_add():
 def admin_video_edit(video_id: int):
     require_admin()
     db = get_db()
-    video = db.execute("SELECT * FROM videos WHERE id=?", (video_id,)).fetchone()
+    video = db.execute(
+        q("SELECT * FROM videos WHERE id=?", "SELECT * FROM videos WHERE id=%s"),
+        (video_id,),
+    ).fetchone()
     if not video:
         abort(404)
 
-    playlists = db.execute("SELECT id, name FROM playlists ORDER BY datetime(created_at) DESC").fetchall()
+    playlists = db.execute(f"SELECT id, name FROM playlists ORDER BY {dt('created_at')} DESC").fetchall()
     current_pl = get_video_playlist(db, video_id)
 
     if request.method == "POST":
@@ -984,22 +1246,36 @@ def admin_video_edit(video_id: int):
         provider, embed_url, embed_html = force_provider_embed(provider_choice, source_url)
 
         db.execute(
-            """
-            UPDATE videos
-            SET title=?, description=?, source_url=?, embed_url=?, thumbnail_url=?,
-                provider=?, embed_html=?, category=?
-            WHERE id=?
-            """,
+            q(
+                """
+                UPDATE videos
+                SET title=?, description=?, source_url=?, embed_url=?, thumbnail_url=?,
+                    provider=?, embed_html=?, category=?
+                WHERE id=?
+                """,
+                """
+                UPDATE videos
+                SET title=%s, description=%s, source_url=%s, embed_url=%s, thumbnail_url=%s,
+                    provider=%s, embed_html=%s, category=%s
+                WHERE id=%s
+                """,
+            ),
             (title, description, source_url, embed_url, thumbnail_url, provider, embed_html, category, video_id),
         )
 
         chosen_playlist_id = None
         if new_playlist_name:
-            db.execute(
-                "INSERT INTO playlists (name, created_at) VALUES (?, ?)",
-                (new_playlist_name[:120], datetime.utcnow().isoformat()),
-            )
-            chosen_playlist_id = db.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
+            if IS_PG:
+                chosen_playlist_id = db.execute(
+                    "INSERT INTO playlists (name, created_at) VALUES (%s, %s) RETURNING id",
+                    (new_playlist_name[:120], datetime.utcnow().isoformat()),
+                ).fetchone()["id"]
+            else:
+                db.execute(
+                    "INSERT INTO playlists (name, created_at) VALUES (?, ?)",
+                    (new_playlist_name[:120], datetime.utcnow().isoformat()),
+                )
+                chosen_playlist_id = db.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
         elif playlist_id and playlist_id != "none":
             try:
                 chosen_playlist_id = int(playlist_id)
@@ -1009,16 +1285,30 @@ def admin_video_edit(video_id: int):
         if current_pl:
             old_id = int(current_pl["playlist_id"])
             if (chosen_playlist_id is None) or (chosen_playlist_id != old_id):
-                db.execute("DELETE FROM playlist_items WHERE playlist_id=? AND video_id=?", (old_id, video_id))
+                db.execute(
+                    q(
+                        "DELETE FROM playlist_items WHERE playlist_id=? AND video_id=?",
+                        "DELETE FROM playlist_items WHERE playlist_id=%s AND video_id=%s",
+                    ),
+                    (old_id, video_id),
+                )
 
         if chosen_playlist_id is not None:
             db.execute(
-                """
-                INSERT INTO playlist_items (playlist_id, video_id, position)
-                VALUES (?, ?, ?)
-                ON CONFLICT(playlist_id, video_id)
-                DO UPDATE SET position=excluded.position
-                """,
+                q(
+                    """
+                    INSERT INTO playlist_items (playlist_id, video_id, position)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(playlist_id, video_id)
+                    DO UPDATE SET position=excluded.position
+                    """,
+                    """
+                    INSERT INTO playlist_items (playlist_id, video_id, position)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT(playlist_id, video_id)
+                    DO UPDATE SET position=EXCLUDED.position
+                    """,
+                ),
                 (chosen_playlist_id, video_id, position),
             )
 
@@ -1038,7 +1328,10 @@ def admin_video_edit(video_id: int):
 def admin_delete(video_id: int):
     require_admin()
     db = get_db()
-    db.execute("DELETE FROM videos WHERE id=?", (video_id,))
+    db.execute(
+        q("DELETE FROM videos WHERE id=?", "DELETE FROM videos WHERE id=%s"),
+        (video_id,),
+    )
     db.commit()
     flash(t("video_deleted"), "ok")
     return redirect(url_for("admin"))
@@ -1050,7 +1343,7 @@ def admin_users():
     require_admin()
     db = get_db()
     users = db.execute(
-        "SELECT id, username, is_admin, created_at FROM users ORDER BY datetime(created_at) DESC"
+        f"SELECT id, username, is_admin, created_at FROM users ORDER BY {dt('created_at')} DESC"
     ).fetchall()
     return render_template("admin_users.html", users=users, main_admin=ADMIN_USERNAME)
 
@@ -1060,7 +1353,10 @@ def admin_user_edit(user_id: int):
     require_admin()
     db = get_db()
     user = db.execute(
-        "SELECT id, username, is_admin, created_at FROM users WHERE id=?",
+        q(
+            "SELECT id, username, is_admin, created_at FROM users WHERE id=?",
+            "SELECT id, username, is_admin, created_at FROM users WHERE id=%s",
+        ),
         (user_id,),
     ).fetchone()
     if not user:
@@ -1078,17 +1374,28 @@ def admin_user_edit(user_id: int):
 
         if new_username and new_username != user["username"]:
             try:
-                db.execute("UPDATE users SET username=? WHERE id=?", (new_username, user_id))
+                db.execute(
+                    q("UPDATE users SET username=? WHERE id=?", "UPDATE users SET username=%s WHERE id=%s"),
+                    (new_username, user_id),
+                )
                 db.commit()
-            except sqlite3.IntegrityError:
-                flash(t("username_exists"), "error")
-                return redirect(url_for("admin_user_edit", user_id=user_id))
+            except Exception as e:
+                if is_unique_violation(e):
+                    flash(t("username_exists"), "error")
+                    return redirect(url_for("admin_user_edit", user_id=user_id))
+                raise
 
-        db.execute("UPDATE users SET is_admin=? WHERE id=?", (is_admin, user_id))
+        db.execute(
+            q("UPDATE users SET is_admin=? WHERE id=?", "UPDATE users SET is_admin=%s WHERE id=%s"),
+            (is_admin, user_id),
+        )
 
         if new_password:
             db.execute(
-                "UPDATE users SET password_hash=? WHERE id=?",
+                q(
+                    "UPDATE users SET password_hash=? WHERE id=?",
+                    "UPDATE users SET password_hash=%s WHERE id=%s",
+                ),
                 (generate_password_hash(new_password), user_id),
             )
 
@@ -1100,4 +1407,5 @@ def admin_user_edit(user_id: int):
 
 
 if __name__ == "__main__":
+    # Lokal dev. Render/Gunicorn använder inte detta.
     app.run(debug=True, host="127.0.0.1", port=5000)

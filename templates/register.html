@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="mx-auto max-w-md">
+    <h1 class="text-xl font-semibold">{{ t('register_title') }}</h1>
+
+    <form class="mt-4 space-y-3 rounded-2xl border border-white/10 bg-white/5 p-5" method="post">
+      <div>
+        <label class="text-xs text-zinc-300">{{ t('username_label') }}</label>
+        <input name="username" required placeholder="{{ t('username_placeholder_example') }}"
+          class="mt-1 w-full rounded-xl border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none placeholder:text-zinc-500 focus:border-white/20">
+      </div>
+
+      <div>
+        <label class="text-xs text-zinc-300">{{ t('password_label') }}</label>
+        <input name="password" type="password" required
+          class="mt-1 w-full rounded-xl border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none focus:border-white/20">
+      </div>
+
+      <div>
+        <label class="text-xs text-zinc-300">{{ t('repeat_password_label') }}</label>
+        <input name="password2" type="password" required
+          class="mt-1 w-full rounded-xl border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none focus:border-white/20">
+      </div>
+
+      <button type="submit"
+        class="w-full rounded-xl border border-white/10 bg-white/10 px-4 py-2.5 text-sm font-medium hover:bg-white/15">
+        {{ t('create_btn') }}
+      </button>
+    </form>
+  </div>
+{% endblock %}

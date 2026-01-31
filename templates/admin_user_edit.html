@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="mx-auto max-w-xl">
+    <h1 class="text-xl font-semibold">{{ t('user_edit_title') }}</h1>
+
+    <div class="mt-2 text-xs text-zinc-400">
+      ID: {{ u['id'] }} · {{ u['created_at'] }}
+    </div>
+
+    {% if is_main_admin %}
+      <div class="mt-4 rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-100">
+        {{ t('main_admin_locked') }}
+      </div>
+    {% endif %}
+
+    <form class="mt-4 space-y-3 rounded-2xl border border-white/10 bg-white/5 p-5" method="post">
+      <div>
+        <label class="text-xs text-zinc-300">{{ t('new_username') }}</label>
+        <input name="username" value="{{ u['username'] }}" {% if is_main_admin %}disabled{% endif %}
+          class="mt-1 w-full rounded-xl border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none focus:border-white/20 disabled:opacity-60">
+      </div>
+
+      <div>
+        <label class="text-xs text-zinc-300">{{ t('new_password') }}</label>
+        <input name="password" type="password" placeholder="{{ t('leave_blank_pw') }}" {% if is_main_admin %}disabled{% endif %}
+          class="mt-1 w-full rounded-xl border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none placeholder:text-zinc-500 focus:border-white/20 disabled:opacity-60">
+        <div class="mt-1 text-xs text-zinc-500">{{ t('leave_blank_pw') }}</div>
+      </div>
+
+      <label class="flex items-center gap-2 text-sm text-zinc-200">
+        <input type="checkbox" name="is_admin" {% if u['is_admin'] %}checked{% endif %} {% if is_main_admin %}disabled{% endif %}
+               class="h-4 w-4 rounded border-white/20 bg-zinc-900 disabled:opacity-60">
+        {{ t('make_admin') }}
+      </label>
+
+      <button type="submit" {% if is_main_admin %}disabled{% endif %}
+        class="w-full rounded-xl border border-white/10 bg-white/10 px-4 py-2.5 text-sm font-medium hover:bg-white/15 disabled:opacity-60 disabled:hover:bg-white/10">
+        {{ t('save_changes') }}
+      </button>
+
+      <a href="{{ url_for('admin_users') }}" class="block text-center text-sm text-zinc-400 underline hover:text-zinc-200">
+        ← Back
+      </a>
+    </form>
+  </div>
+{% endblock %}

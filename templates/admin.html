@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="flex items-center justify-between gap-3">
+    <h1 class="text-xl font-semibold">{{ t('admin_title') }}</h1>
+    <a class="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm hover:bg-white/15"
+       href="{{ url_for('admin_add') }}">
+      {{ t('admin_add_link') }}
+    </a>
+  </div>
+
+  {% if videos|length == 0 %}
+    <div class="mt-6 rounded-2xl border border-white/10 bg-white/5 p-6 text-sm text-zinc-300">
+      {{ t('admin_empty') }}
+    </div>
+  {% else %}
+    <div class="mt-6 space-y-2">
+      {% for v in videos %}
+        <div class="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/5 p-4">
+          <div class="min-w-0">
+            <div class="truncate font-semibold">{{ v['title'] }}</div>
+            <div class="mt-1 text-xs text-zinc-400">
+              <span class="uppercase">{{ v['provider'] }}</span>
+              {% if v['category'] %}<span class="mx-1">·</span><span>{{ v['category'] }}</span>{% endif %}
+              <span class="mx-1">·</span>
+              <span>{{ v['views'] }} {{ t('views') }}</span>
+              <span class="mx-1">·</span>
+              <span>{{ v['likes'] }} {{ t('likes') }}</span>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <a class="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm hover:bg-white/15"
+               href="{{ url_for('admin_video_edit', video_id=v['id']) }}">
+              {{ t('edit_btn') }}
+            </a>
+
+            <form method="post" action="{{ url_for('admin_delete', video_id=v['id']) }}"
+                  onsubmit="return confirm('{{ t('admin_delete_confirm') }}')">
+              <button class="rounded-full border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm hover:bg-red-500/15"
+                      type="submit">
+                {{ t('delete_btn') }}
+              </button>
+            </form>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endblock %}

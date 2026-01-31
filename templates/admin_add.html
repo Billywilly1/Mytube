@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="mx-auto max-w-xl">
+    <h1 class="text-xl font-semibold">{{ t('admin_add_title') }}</h1>
+
+    <form class="mt-4 space-y-3 rounded-2xl border border-white/10 bg-white/5 p-5" method="post">
+      <div>
+        <label class="text-xs text-zinc-300">{{ t('title_label_req') }}</label>
+        <input name="title" required
+          class="mt-1 w-full rounded-xl border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none focus:border-white/20">
+      </div>
+
+      <div>
+        <label class="text-xs text-zinc-300">{{ t('description_label') }}</label>
+        <textarea name="description" rows="4"
+          class="mt-1 w-full rounded-xl border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none focus:border-white/20"></textarea>
+      </div>
+
+      <div>
+        <label class="text-xs text-zinc-300">{{ t('provider_label') }}</label>
+        <select name="provider"
+          class="mt-1 w-full rounded-xl border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none focus:border-white/20">
+          <option value="auto">{{ t('provider_auto') }}</option>
+          <option value="youtube">{{ t('provider_youtube') }}</option>
+          <option value="reddit">{{ t('provider_reddit') }}</option>
+          <option value="tiktok">{{ t('provider_tiktok') }}</option>
+          <option value="vimeo">{{ t('provider_vimeo') }}</option>
+          <option value="loom">{{ t('provider_loom') }}</option>
+          <option value="custom">{{ t('provider_custom') }}</option>
+        </select>
+      </div>
+
+      <div>
+        <label class="text-xs text-zinc-300">{{ t('category_label') }}</label>
+        <input name="category" placeholder="{{ t('category_placeholder') }}"
+          class="mt-1 w-full rounded-xl border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none placeholder:text-zinc-500 focus:border-white/20">
+      </div>
+
+      <div>
+        <label class="text-xs text-zinc-300">{{ t('video_url_label_req') }}</label>
+        <input name="source_url" required placeholder="{{ t('video_url_placeholder_admin') }}"
+          class="mt-1 w-full rounded-xl border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none placeholder:text-zinc-500 focus:border-white/20">
+      </div>
+
+      <div>
+        <label class="text-xs text-zinc-300">{{ t('thumb_url_label') }}</label>
+        <input name="thumbnail_url" placeholder="{{ t('thumb_url_placeholder') }}"
+          class="mt-1 w-full rounded-xl border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none placeholder:text-zinc-500 focus:border-white/20">
+      </div>
+
+      <button type="submit"
+        class="w-full rounded-xl border border-white/10 bg-white/10 px-4 py-2.5 text-sm font-medium hover:bg-white/15">
+        {{ t('save_btn') }}
+      </button>
+
+      <p class="text-xs text-zinc-400">{{ t('reddit_tip') }}</p>
+    </form>
+  </div>
+{% endblock %}

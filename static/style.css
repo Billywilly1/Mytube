@@ -1,0 +1,116 @@
+:root { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; }
+body { margin: 0; background: #0f0f10; color: #f2f2f2; }
+a { color: inherit; text-decoration: none; }
+
+.topbar {
+  display: flex; gap: 12px; align-items: center;
+  padding: 12px 16px; border-bottom: 1px solid #222; position: sticky; top: 0; background: #0f0f10;
+}
+.brand { font-weight: 800; letter-spacing: .3px; }
+
+.navleft { display: flex; gap: 10px; align-items: center; }
+.navlink { color: #ddd; padding: 8px 10px; border-radius: 10px; border: 1px solid transparent; }
+.navlink:hover { border-color: #2a2a2a; background: #141416; }
+
+.search { flex: 1; display: flex; gap: 8px; max-width: 640px; }
+.search input { flex: 1; padding: 10px 12px; border-radius: 10px; border: 1px solid #2a2a2a; background: #141416; color: #fff; }
+.search button { padding: 10px 12px; border-radius: 10px; border: 1px solid #2a2a2a; background: #1d1d20; color: #fff; cursor: pointer; }
+
+.btn, .btn-secondary, button {
+  padding: 10px 12px; border-radius: 10px; border: 1px solid #2a2a2a; background: #1d1d20; color: #fff; cursor: pointer;
+}
+.btn-secondary { background: transparent; }
+button.danger { border-color: #6a2020; background: #2a1010; }
+
+.userchip {
+  padding: 8px 10px; border: 1px solid #2a2a2a; border-radius: 999px; color: #ddd;
+}
+
+.container { padding: 18px 16px; max-width: 1100px; margin: 0 auto; }
+.footer { padding: 22px 16px; border-top: 1px solid #222; color: #aaa; text-align: center; }
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 14px;
+}
+.card { border: 1px solid #222; border-radius: 14px; overflow: hidden; background: #121214; }
+.thumb { aspect-ratio: 16 / 9; background: #0b0b0c; display: flex; align-items: center; justify-content: center; }
+.thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.thumb-fallback { font-size: 40px; opacity: .8; }
+.meta { padding: 12px; }
+.title { font-weight: 700; margin-bottom: 6px; }
+.sub { font-size: 13px; color: #b8b8b8; display: flex; gap: 8px; flex-wrap: wrap; }
+
+.watch { display: grid; grid-template-columns: 1.4fr .9fr; gap: 16px; }
+@media (max-width: 980px) { .watch { grid-template-columns: 1fr; } }
+
+.player { border: 1px solid #222; border-radius: 14px; overflow: hidden; background: #000; }
+.player iframe { width: 100%; height: min(70vh, 520px); display: block; }
+
+/* Reddit oEmbed content */
+.player blockquote { margin: 0; }
+.player .reddit-embed, .player .reddit-post { width: 100% !important; }
+
+.info { border: 1px solid #222; border-radius: 14px; padding: 14px; background: #121214; }
+.watch-title { margin: 0 0 6px 0; }
+.watch-sub { color: #b8b8b8; display: flex; gap: 10px; flex-wrap: wrap; }
+.desc { margin: 12px 0; white-space: pre-wrap; color: #e8e8e8; }
+.actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+
+.form { display: grid; gap: 8px; margin-top: 10px; }
+.form input, .form textarea {
+  padding: 10px 12px; border-radius: 10px; border: 1px solid #2a2a2a; background: #141416; color: #fff;
+}
+
+.comments { margin-top: 12px; display: grid; gap: 10px; }
+.comment { border: 1px solid #222; border-radius: 12px; padding: 10px 12px; background: #101012; }
+.comment-head { display: flex; justify-content: space-between; gap: 12px; color: #ddd; }
+.muted { color: #9a9a9a; font-size: 12px; }
+
+.flashwrap { display: grid; gap: 8px; margin-bottom: 12px; }
+.flash { padding: 10px 12px; border-radius: 12px; border: 1px solid #2a2a2a; background: #141416; }
+.flash.ok { border-color: #1f4a2a; background: #0f1a12; }
+.flash.error { border-color: #6a2020; background: #1a0f0f; }
+
+.hint { color: #bdbdbd; margin-top: 10px; }
+code { background: #0b0b0c; border: 1px solid #222; padding: 2px 6px; border-radius: 8px; }
+
+.list { display: grid; gap: 10px; margin-top: 10px; }
+.row {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 12px;
+  border: 1px solid #222;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #121214;
+}
+.rowthumb { aspect-ratio: 16 / 9; background: #0b0b0c; display:flex; align-items:center; justify-content:center; }
+.rowthumb img { width:100%; height:100%; object-fit:cover; display:block; }
+.thumb-fallback.small { font-size: 26px; }
+
+.rowmeta { padding: 10px 12px; }
+.adminrow {
+  display: flex; justify-content: space-between; align-items: center;
+  border: 1px solid #222; border-radius: 14px; padding: 10px 12px; background: #121214;
+}
+.rowlink { font-weight: 700; }
+
+/* Fix för sort-dropdown (Nyast / Mest tittade / Mest likeade) */
+select {
+  color: #e5e7eb;              /* ljus text */
+  background-color: #09090b;   /* mörk bakgrund */
+}
+
+select option {
+  background-color: #09090b;   /* mörk dropdown */
+  color: #e5e7eb;              /* ljus text */
+}
+
+/* När option är vald / hover */
+select option:checked,
+select option:hover {
+  background-color: #18181b;
+  color: #ffffff;
+}

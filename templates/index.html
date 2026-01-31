@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="space-y-5">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <h1 class="text-xl font-semibold">{{ t('index_title') }}</h1>
+
+      <!-- Sort -->
+      <form method="get" action="{{ url_for('index') }}" class="flex items-center gap-2">
+        {% if q %}<input type="hidden" name="q" value="{{ q }}">{% endif %}
+        {% if selected_cat %}<input type="hidden" name="cat" value="{{ selected_cat }}">{% endif %}
+
+        <label class="text-xs text-zinc-400">{{ t('filter_sort') }}</label>
+        <select name="sort" onchange="this.form.submit()"
+          class="rounded-xl border border-white/10 bg-zinc-900 text-zinc-200 px-3 py-2 text-sm outline-none hover:bg-zinc-800 focus:border-white/20">
+          <option value="new" {% if sort=='new' %}selected{% endif %}>{{ t('sort_new') }}</option>
+          <option value="views" {% if sort=='views' %}selected{% endif %}>{{ t('sort_views') }}</option>
+          <option value="likes" {% if sort=='likes' %}selected{% endif %}>{{ t('sort_likes') }}</option>
+        </select>
+      </form>
+    </div>
+
+    <!-- Category chips -->
+    <div class="flex flex-wrap items-center gap-2">
+      <a
+        class="rounded-full border px-3 py-1.5 text-sm transition
+               {% if not selected_cat %}border-white/20 bg-white/15{% else %}border-white/10 bg-white/5 hover:bg-white/10{% endif %}"
+        href="{{ url_for('index', q=q or None, sort=sort or None) }}">
+        {{ t('filter_all') }}
+      </a>
+
+      {% for c in categories %}
+        <a
+          class="rounded-full border px-3 py-1.5 text-sm transition
+                 {% if selected_cat==c %}border-white/20 bg-white/15{% else %}border-white/10 bg-white/5 hover:bg-white/10{% endif %}"
+          href="{{ url_for('index', q=q or None, cat=c, sort=sort or None) }}">
+          {{ c }}
+        </a>
+      {% endfor %}
+    </div>
+
+    {% if videos|length == 0 %}
+      <div class="rounded-2xl border border-white/10 bg-white/5 p-6 text-sm text-zinc-300">
+        {{ t('index_empty') }}
+      </div>
+    {% else %}
+      <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        {% for v in videos %}
+          <a href="{{ url_for('watch', video_id=v['id']) }}"
+             class="group overflow-hidden rounded-2xl border border-white/10 bg-white/5 hover:bg-white/7 transition">
+            <div class="aspect-video w-full bg-zinc-900 overflow-hidden">
+              {% if v['thumbnail_url'] %}
+                <img src="{{ v['thumbnail_url'] }}" alt="" class="h-full w-full object-cover group-hover:scale-[1.02] transition">
+              {% else %}
+                <div class="flex h-full w-full items-center justify-center text-2xl opacity-70">🎬</div>
+              {% endif %}
+            </div>
+            <div class="p-3">
+              <div class="line-clamp-2 text-sm font-semibold">{{ v['title'] }}</div>
+
+              <div class="mt-2 flex flex-wrap items-center gap-2 text-xs text-zinc-400">
+                <span class="rounded-full border border-white/10 bg-white/5 px-2 py-1 uppercase">{{ v['provider'] }}</span>
+                {% if v['category'] %}
+                  <span class="rounded-full border border-white/10 bg-white/5 px-2 py-1">{{ v['category'] }}</span>
+                {% endif %}
+              </div>
+
+              <div class="mt-2 text-xs text-zinc-400">
+                <span>{{ v['views'] }} {{ t('views') }}</span>
+                <span class="mx-1">·</span>
+                <span>{{ v['likes'] }} {{ t('likes') }}</span>
+              </div>
+            </div>
+          </a>
+        {% endfor %}
+      </div>
+    {% endif %}
+  </div>
+{% endblock %}

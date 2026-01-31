@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1 class="text-xl font-semibold">{{ t('history_title') }}</h1>
+
+  {% if rows|length == 0 %}
+    <div class="mt-6 rounded-2xl border border-white/10 bg-white/5 p-6 text-sm text-zinc-300">
+      {{ t('history_empty') }}
+    </div>
+  {% else %}
+    <div class="mt-6 space-y-2">
+      {% for r in rows %}
+        <a href="{{ url_for('watch', video_id=r['id']) }}"
+           class="flex gap-3 rounded-2xl border border-white/10 bg-white/5 p-3 hover:bg-white/7">
+          <div class="aspect-video w-44 shrink-0 overflow-hidden rounded-xl bg-zinc-900">
+            {% if r['thumbnail_url'] %}
+              <img src="{{ r['thumbnail_url'] }}" alt="" class="h-full w-full object-cover">
+            {% else %}
+              <div class="flex h-full w-full items-center justify-center text-2xl opacity-70">🎬</div>
+            {% endif %}
+          </div>
+
+          <div class="min-w-0">
+            <div class="truncate font-semibold">{{ r['title'] }}</div>
+            <div class="mt-1 text-xs text-zinc-400">
+              <span>{{ t('last_watched') }}: {{ r['last_watched_at'] }}</span>
+              <span class="mx-1">·</span>
+              <span>{{ t('watch_count') }}: {{ r['watch_count'] }}</span>
+            </div>
+          </div>
+        </a>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endblock %}

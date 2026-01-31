@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="mx-auto max-w-xl">
+    <h1 class="text-xl font-semibold">{{ t('add_title') }}</h1>
+    <p class="mt-2 text-sm text-zinc-400">{{ t('add_hint') }}</p>
+
+    <form class="mt-4 space-y-3 rounded-2xl border border-white/10 bg-white/5 p-5" method="post">
+      <div>
+        <label class="text-xs text-zinc-300">{{ t('title_label_req') }}</label>
+        <input name="title" required placeholder="{{ t('title_placeholder') }}"
+          class="mt-1 w-full rounded-xl border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none placeholder:text-zinc-500 focus:border-white/20">
+      </div>
+
+      <div>
+        <label class="text-xs text-zinc-300">{{ t('description_label') }}</label>
+        <textarea name="description" rows="4" placeholder="{{ t('desc_placeholder') }}"
+          class="mt-1 w-full rounded-xl border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none placeholder:text-zinc-500 focus:border-white/20"></textarea>
+      </div>
+
+      <div>
+        <label class="text-xs text-zinc-300">{{ t('video_url_label_req') }}</label>
+        <input name="source_url" required placeholder="{{ t('video_url_placeholder') }}"
+          class="mt-1 w-full rounded-xl border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none placeholder:text-zinc-500 focus:border-white/20">
+      </div>
+
+      <div>
+        <label class="text-xs text-zinc-300">{{ t('thumb_url_label') }}</label>
+        <input name="thumbnail_url" placeholder="{{ t('thumb_url_placeholder') }}"
+          class="mt-1 w-full rounded-xl border border-white/10 bg-zinc-900/60 px-3 py-2 text-sm outline-none placeholder:text-zinc-500 focus:border-white/20">
+      </div>
+
+      <button type="submit"
+        class="w-full rounded-xl border border-white/10 bg-white/10 px-4 py-2.5 text-sm font-medium hover:bg-white/15">
+        {{ t('save_btn') }}
+      </button>
+
+      <div class="text-xs text-zinc-400">
+        {{ t('admin_token_tip') }}
+      </div>
+    </form>
+  </div>
+{% endblock %}

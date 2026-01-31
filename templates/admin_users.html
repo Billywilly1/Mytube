@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="flex items-center justify-between gap-3">
+    <h1 class="text-xl font-semibold">{{ t('users_title') }}</h1>
+  </div>
+
+  {% if users|length == 0 %}
+    <div class="mt-6 rounded-2xl border border-white/10 bg-white/5 p-6 text-sm text-zinc-300">
+      {{ t('users_empty') }}
+    </div>
+  {% else %}
+    <div class="mt-6 space-y-2">
+      {% for u in users %}
+        <div class="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/5 p-4">
+          <div class="min-w-0">
+            <div class="truncate font-semibold">
+              {{ u['username'] }}
+              {% if u['is_admin'] %}
+                <span class="ml-2 rounded-full bg-white/10 px-2 py-0.5 text-xs text-zinc-300">ADMIN</span>
+              {% endif %}
+              {% if u['username']|lower == main_admin|lower %}
+                <span class="ml-2 rounded-full bg-red-500/10 px-2 py-0.5 text-xs text-red-200">{{ t('locked') }}</span>
+              {% endif %}
+            </div>
+            <div class="mt-1 text-xs text-zinc-400">
+              ID: {{ u['id'] }} · {{ u['created_at'] }}
+            </div>
+          </div>
+
+          {% if u['username']|lower == main_admin|lower %}
+            <span class="text-xs text-zinc-400">{{ t('main_admin_locked') }}</span>
+          {% else %}
+            <a class="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm hover:bg-white/15"
+               href="{{ url_for('admin_user_edit', user_id=u['id']) }}">
+              {{ t('edit') }}
+            </a>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endblock %}
